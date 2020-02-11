@@ -1,0 +1,33 @@
+---
+title: "Applications of Item Response Theory in R"
+subtitle: "Prerequisites"
+author: "Jake Thompson"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Software
+
+All of the required software is available for free online. First, download R from https://cloud.r-project.org/. Select your operating system, and download R version 3.6.2. If you are currently running and older version of R, I recommend updating unless you have a strong reason for not updating. At minimum, you must have an R version >= 3.1. Also note that the random number generator was updated in R 3.6, so if you are running R 3.5 or earlier, you may get slightly different results than what I will show.
+
+After installing R, I highly recommend installing RStudio from https://rstudio.com/products/rstudio/download/#download. RStudio is not required, but will be the IDE I use to interface with R. If you have another interface you prefer, you do not need RStudio. However, I am only familiar with RStudio, and will be unable to help trouble issues in other IDEs.
+
+# Packages
+
+Think of R like the default software on your phone (e.g., iOS, Android). It can do a lot, but we can make it do more. On your phone, you might install an app to provide new functionality, or improve upon the built in functionality. In R, we install packages. There are a few packages that we will use to estimate IRT models and explore the results. To install the pacakges we need, open RStudio (or your preferred IDE), and paste this code into the console that opens.
+
+```{r install-packages, eval = FALSE}
+# Tell R where to install packages from
+options(repos = "https://cran.rstudio.com")
+
+# These are the packages we need
+needed_packages <- c("tidyverse", "readxl", "mirt", "furrr", "here", "glue")
+
+# Install the packages
+install.packages(needed_packages, dependencies = TRUE)
+```
+
