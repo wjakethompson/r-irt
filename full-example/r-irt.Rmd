@@ -24,6 +24,7 @@ library(furrr)
 library(htmlwidgets)
 library(slickR)
 library(svglite)
+library(knitr)
 
 library(here)
 library(glue)
@@ -32,7 +33,8 @@ knitr::opts_chunk$set(
   echo = TRUE,
   fig.align = "c",
   out.width = "90%",
-  fig.retina = 3
+  fig.retina = 3,
+  fig.path = "figures/"
 )
 ```
 
@@ -100,6 +102,54 @@ icc_plot <- function(itemid, itemtype, NIS, maxscore, icc_data) {
     theme(legend.position = "bottom")
   
   return(plot)
+}
+info_calc <- function(theta, itemid, a, b, c, u, .pb = NULL) {
+  if ((!is.null(.pb)) && inherits(.pb, "Progress") && (.pb$i < .pb$n)) {
+    .pb$tick()$print()
+  }
+  
+  dat <- tibble(theta = theta, itemid = itemid, a = a, b = b, c = c, u = u)
+  
+  info <- dat %>%
+    unnest(cols = b) %>%
+    mutate(exp_score = c + (1 - c) * inv_logit(a * (theta - b))) %>%
+    add_row(exp_score = 1, .before = 1) %>%
+    add_row(exp_score = 0) %>%
+    rowid_to_column(var = "cat") %>%
+    mutate(cat = cat - 1,
+           a = mean(a, na.rm = TRUE),
+           p = exp_score - lead(exp_score, 1),
+           a1 = ((a^2) * (exp_score * (1 - exp_score) - lead(exp_score, 1) * (1 - lead(exp_score, 1)))^ 2) / p) %>%
+    pull(a1) %>%
+    sum(na.rm = TRUE)
+  
+  dat %>%
+    mutate(info = info)
+}
+expected_calc <- function(studentid, gender, itemid, obs_score, theta, a, b, c,
+                          u, .pb = NULL) {
+  if ((!is.null(.pb)) && inherits(.pb, "Progress") && (.pb$i < .pb$n)) {
+    .pb$tick()$print()
+  }
+  
+  dat <- tibble(studentid = studentid, gender = gender, itemid = itemid,
+                obs_score = obs_score, theta = theta, a = a, b = b, c = c,
+                u = u)
+  exp_score <- dat %>%
+    unnest(cols = b) %>%
+    mutate(exp_score = c + (1 - c) * inv_logit(a * (theta - b))) %>%
+    add_row(exp_score = 1, .before = 1) %>%
+    add_row(exp_score = 0) %>%
+    rowid_to_column(var = "cat") %>%
+    mutate(cat = cat - 1,
+           p = exp_score - lead(exp_score, 1),
+           exp = cat * p) %>%
+    pull(exp) %>%
+    sum(na.rm = TRUE)
+  
+  dat %>%
+    mutate(exp_score = exp_score,
+           residual = obs_score - exp_score)
 }
 ```
 
@@ -260,32 +310,27 @@ slick_dots_id <- slickR(
 htmltools::browsable(htmltools::tagList(s2, slick_dots_id))
 ```
 
+In addition to item characteristics, we can also look at test level characteristics. It's often common to examine the distributions of raw scores and the estimated ability estimates. First, we calculate the total score for each student, and then join the estimated ability parameters (called $\theta$). Then we can create a plot to compare the distributions using **ggplot2** [@R-ggplot2; @ggplot22016], shown in Figure \@ref(fig:test-dist).
 
-```{r test-info, cache = TRUE}
-info_calc <- function(theta, itemid, a, b, c, u, .pb = NULL) {
-  if ((!is.null(.pb)) && inherits(.pb, "Progress") && (.pb$i < .pb$n)) {
-    .pb$tick()$print()
-  }
-  
-  dat <- tibble(theta = theta, itemid = itemid, a = a, b = b, c = c, u = u)
-  
-  info <- dat %>%
-    unnest(cols = b) %>%
-    mutate(exp_score = c + (1 - c) * inv_logit(a * (theta - b))) %>%
-    add_row(exp_score = 1, .before = 1) %>%
-    add_row(exp_score = 0) %>%
-    rowid_to_column(var = "cat") %>%
-    mutate(cat = cat - 1,
-           a = mean(a, na.rm = TRUE),
-           p = exp_score - lead(exp_score, 1),
-           a1 = ((a^2) * (exp_score * (1 - exp_score) - lead(exp_score, 1) * (1 - lead(exp_score, 1)))^ 2) / p) %>%
-    pull(a1) %>%
-    sum(na.rm = TRUE)
-  
-  dat %>%
-    mutate(info = info)
-}
+```{r test-dist, fig.asp = 0.618, fig.cap = "Distributions of assessment scores."}
+test_dist <- clean_ied %>%
+  pivot_longer(cols = -c(studentid, gender),
+               names_to = "item", values_to = "score") %>%
+  group_by(studentid, gender) %>%
+  summarize(`Raw~Score` = sum(score, na.rm = TRUE)) %>%
+  left_join(person_params, by = "studentid") %>%
+  pivot_longer(cols = -c(studentid, gender),
+               names_to = "measure", values_to = "score")
 
+ggplot(test_dist, aes(x = score)) +
+  geom_histogram(bins = 20, color = "black", alpha = 0.8) +
+  facet_wrap(~measure, scales = "free", labeller = label_parsed) +
+  theme_bw()
+```
+
+Another important aspect of an assessment scaled with IRT is the test information function, which is the basis for the conditional standard error of measurement. The item information can be calculated using the custom `info_calc()` function. We then aggregate across all items to get the test information, and calculate the associated standard error. Finally, we can plot both functions, as shown in Figure \@ref(fig:test-info).
+
+```{r test-info, cache = TRUE, warning = FALSE, results = "hide", fig.asp = 0.618, fig.cap = "Test information function and associated conditional standard error of measurement."}
 plan(multiprocess)
 
 info <- crossing(theta = seq(-3, 3, by = 0.01),
@@ -295,53 +340,23 @@ info <- crossing(theta = seq(-3, 3, by = 0.01),
 
 test_info <- info %>%
   group_by(theta) %>%
-  summarize(info = sum(info)) %>%
-  mutate(se = 1 / sqrt(info))
+  summarize(Information = sum(info)) %>%
+  mutate(`Standard Error` = 1 / sqrt(Information)) %>%
+  pivot_longer(cols = -theta, names_to = "measure", values_to = "value")
 
-ggplot(test_info, aes(x = theta, y = info)) +
-  geom_line() +
-  scale_x_continuous(breaks = seq(-3, 3, by = 1)) +
-  labs(x = expression(theta), y = "Information", title = "Test Information") +
-  theme_bw()
-
-ggplot(test_info, aes(x = theta, y = se)) +
-  geom_line() +
+ggplot(test_info, aes(x = theta, y = value)) +
+  geom_line(size = 2) +
   scale_x_continuous(breaks = seq(-3, 3, by = 1)) +
   expand_limits(y = 0) +
-  labs(x = expression(theta), y = "Standard Error",
-       title = "Conditional Standard Error of Measurement") +
+  labs(x = expression(theta), y = "Value") +
+  facet_wrap(~measure, scales = "free") +
   theme_bw()
 ```
 
+
 ## Model Fit
 
-```{r expected-scores, eval = FALSE}
-expected_calc <- function(studentid, gender, itemid, obs_score, theta, a, b, c,
-                          u, .pb = NULL) {
-  if ((!is.null(.pb)) && inherits(.pb, "Progress") && (.pb$i < .pb$n)) {
-    .pb$tick()$print()
-  }
-  
-  dat <- tibble(studentid = studentid, gender = gender, itemid = itemid,
-                obs_score = obs_score, theta = theta, a = a, b = b, c = c,
-                u = u)
-  exp_score <- dat %>%
-    unnest(cols = b) %>%
-    mutate(exp_score = c + (1 - c) * inv_logit(a * (theta - b))) %>%
-    add_row(exp_score = 1, .before = 1) %>%
-    add_row(exp_score = 0) %>%
-    rowid_to_column(var = "cat") %>%
-    mutate(cat = cat - 1,
-           p = exp_score - lead(exp_score, 1),
-           exp = cat * p) %>%
-    pull(exp) %>%
-    sum(na.rm = TRUE)
-  
-  dat %>%
-    mutate(exp_score = exp_score,
-           residual = obs_score - exp_score)
-}
-
+```{r expected-scores, warning = FALSE, results = "hide"}
 plan(multiprocess)
 
 residuals <- clean_ied %>%
@@ -366,6 +381,7 @@ suppressWarnings(
 # Correct capitalization in packages
 read_lines("bib/packages.bib") %>%
   str_replace_all("mirt:", "{mirt}:") %>%
+  str_replace_all("ggplot2:", "{ggplot2}:") %>%
   str_replace_all(" Stan", " {Stan}") %>%
   str_replace_all("rstan:", "{RStan}:") %>%
   str_replace_all("rstanarm:", "{RStanArm}:") %>%
