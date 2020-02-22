@@ -1,5 +1,5 @@
 ---
-title: "Applications of Item Response Theory in R"
+title: "Applications of Item Response Theory in *R*"
 author: "W. Jake Thompson, Ph.D."
 date: "`r Sys.Date()`"
 output:
@@ -7,14 +7,13 @@ output:
     toc: true
     toc_float: true
     number_sections: false
-    css: styles.css
 bibliography: ["bib/refs.bib", "bib/packages.bib"]
 biblio-style: apa
 csl: csl/apa.csl
 link-citations: yes
 ---
 
-```{r setup, include = FALSE}
+```{r setup, warning = FALSE, include = FALSE}
 library(tidyverse)
 library(readxl)
 library(mirt)
@@ -25,6 +24,8 @@ library(htmlwidgets)
 library(slickR)
 library(svglite)
 library(knitr)
+library(ggtext)
+library(kableExtra)
 
 library(here)
 library(glue)
@@ -36,25 +37,22 @@ knitr::opts_chunk$set(
   fig.retina = 3,
   fig.path = "figures/"
 )
+
+plan(multiprocess)
 ```
 
-```{r functions, include = FALSE}
+```{css, echo = FALSE}
+.slick-dots li {
+  width: 35px;
+  height: 20px;
+  margin: 0 5px;
+  padding: 0;
+}
+```
+
+```{r functions, include = FALSE, cache = TRUE}
 inv_logit <- function(x) {
   1 / (1 + exp(-x))
-}
-int_runs <- function(run, sep = ",", collapse = ", ") {
-  run <- as.numeric(flatten(str_split(run, sep)))
-  
-  rundiff <- c(1, diff(run))
-  difflist <- split(run, cumsum(rundiff != 1))
-  all_runs <- unlist(lapply(difflist, function(x) {
-    if (length(x) %in% 1:2) {
-      as.character(x) 
-    } else {
-      paste0(x[1], "-", x[length(x)])
-    }
-  }), use.names = FALSE)
-  paste(all_runs, collapse = collapse)
 }
 icc_calc <- function(theta, itemid, a, b, c, u, .pb = NULL) {
   if ((!is.null(.pb)) && inherits(.pb, "Progress") && (.pb$i < .pb$n)) {
@@ -147,13 +145,90 @@ expected_calc <- function(studentid, gender, itemid, obs_score, theta, a, b, c,
     pull(exp) %>%
     sum(na.rm = TRUE)
   
-  dat %>%
+  ret_frame <- dat %>%
     mutate(exp_score = exp_score,
            residual = obs_score - exp_score)
+  return(ret_frame)
+}
+sr_calc <- function(quad, n, prop, theta, itemid, a, b, c, u, .pb = NULL) {
+  if ((!is.null(.pb)) && inherits(.pb, "Progress") && (.pb$i < .pb$n)) {
+    .pb$tick()$print()
+  }
+  
+  dat <- tibble(quad = quad, n = n, prop = prop, theta = theta, itemid = itemid,
+                a = a, b = b, c = c, u = u)
+  
+  icc <- dat %>%
+    unnest(cols = b) %>%
+    mutate(exp_score = c + (1 - c) * inv_logit(a * (theta - b))) %>%
+    add_row(exp_score = 1, .before = 1) %>%
+    add_row(exp_score = 0) %>%
+    rowid_to_column(var = "cat") %>%
+    mutate(cat = cat - 1,
+           theta = mean(theta, na.rm = TRUE),
+           itemid = unique(itemid[!is.na(itemid)]),
+           quad = mean(quad, na.rm = TRUE),
+           n = mean(n, na.rm = TRUE),
+           prop = mean(prop, na.rm = TRUE),
+           a = mean(a, na.rm = TRUE),
+           c = mean(c, na.rm = TRUE),
+           u = mean(u, na.rm = TRUE),
+           cat_p = exp_score - lead(exp_score, n = 1, default = 0),
+           p = cat * cat_p,
+           var = cat_p * (1 - cat_p)) %>%
+    select(itemid, theta, cat, everything()) %>%
+    group_by(quad, itemid, n, prop) %>%
+    summarize(max_score = max(cat) - 1, theta = mean(theta), p = sum(p),
+              var = sum(var)) %>%
+    ungroup() %>%
+    mutate(se = sqrt(var / n),
+           df = 1,
+           sr = (prop - p) / se,
+           bar_top = min(max_score, p + (1.96 * se)),
+           bar_bottom = max(0, p - (1.96 * se)),
+           chisq = sr^2)
+
+  return(icc)
+}
+sr_plot <- function(itemid, itemtype, NIS, maxscore, sr_data, icc_data) {
+  icc_data <- icc_data %>%
+    group_by(theta) %>%
+    summarize(exp_score = sum(p * cat))
+  
+  sr_summary <- sr_data %>%
+    summarize(chisq = sum(chisq),  df = sum(df)) %>%
+    mutate(pvalue = pchisq(chisq, df, lower.tail = FALSE),
+           chisq = sprintf("%0.1f", chisq),
+           pvalue = sprintf("%0.3f", pvalue),
+           pvalue = case_when(pvalue == "0.000" ~ "< 0.001",
+                              TRUE ~ paste0("= ", pvalue)))
+  
+  subtitle <- bquote(.(itemid) * "; " ~ chi[(.(sr_summary$df))]^2 ~ "=" ~
+                       .(sr_summary$chisq) * "," ~ italic(p) ~ 
+                       .(sr_summary$pvalue))
+  
+  plot <- ggplot(icc_data, aes(x = theta, y = exp_score)) +
+    geom_line(size = 2) +
+    geom_errorbar(data = sr_data, inherit.aes = FALSE,
+                  mapping = aes(x = theta, ymin = bar_bottom, ymax = bar_top),
+                  color = "#E69F00", width = 0.2, size = 1) +
+    geom_point(data = sr_data, mapping = aes(y = prop), color = "#56B4E9",
+               size = 3) +
+    scale_x_continuous(breaks = seq(-3, 3, by = 1)) +
+    expand_limits(y = c(0, (NIS - 1))) +
+    labs(x = expression(theta),
+         y = expression(paste("P(X >= x | ", theta, ")")),
+         title = "Item Characteristic Curve",
+         subtitle = subtitle,
+         color = "Score") +
+    theme_bw() +
+    theme(legend.position = "bottom")
+  
+  return(plot)
 }
 ```
 
-This document includes a more complete example of conducting an item response theory (IRT) analysis in R. This work-up includes not only estimation of item and person parameters, but also the creation of item characteristic curves, test information, reliability, and model fit. Most data cleaning and manipulation will utilize a suite a packages known as the **tidyverse** [@tidyverse2019]. The IRT analysis will use the **mirt** package [@mirt2012].
+This document includes a more complete example of conducting an item response theory (IRT) analysis in *R*. This work-up includes not only estimation of item and person parameters, but also the creation of item characteristic curves, test information, reliability, and model fit. Most data cleaning and manipulation will utilize a suite a packages known as the **tidyverse** [@tidyverse2019]. The IRT analysis will use the **mirt** package [@mirt2012].
 
 
 ## Data Cleaning
@@ -161,9 +236,6 @@ This document includes a more complete example of conducting an item response th
 The first step of any analysis is to read in the data. For this example, we will use a balanced sample of males and females from a large scale operational assessment. This data set contains 5,000 respondents to 40 items assessing the respondents' knowledge and understandings of engineering design. Also included is a file of metadata, describing the 40 items.
 
 ```{r read-data}
-library(tidyverse)
-library(readxl)
-
 ied <- read_csv(here("data", "IED_data.csv"),
                 col_types = cols(.default = col_integer(),
                                  gender = col_character()))
@@ -172,7 +244,7 @@ meta <- read_excel(here("data", "metadata.xlsx"), sheet = "IED")
 
 We next have to determine how each item will be modeled. To do this, we create a new variable called `mirt_type`. When the items are dichotomously scored (i.e., `NIS == 2`), we will use the 3-parameter logistic model [3PL; @birnbaum_1968]. For polytomously scored items, we will use the graded response model [GRM; @samejima_1969; @samejima_1972; @samejima_1997]. The modeling will actually happen with the **mirt** package [@R-mirt]. For a list of available models, see [`?mirt()`](https://rdrr.io/cran/mirt/man/mirt.html).
 
-We also need to clean the response data. In the `ied` data, missing values have been coded a `-9`. The `na_if` function can be used to replace a given value with R's internal representation of missing values, `NA`.
+We also need to clean the response data. In the `ied` data, missing values have been coded a `-9`. The `na_if` function can be used to replace a given value with *R*'s internal representation of missing values, `NA`.
 
 ```{r clean-data}
 clean_meta <- meta %>%
@@ -196,8 +268,6 @@ model_data <- clean_ied %>%
 We are now ready to estimate the model. The first argument is the `data`, which we specify as the `model_data` we just created. Next, the actual model must be specified. Because we are using a unidimensional model, we have only one factor, called `F1`. This factor is measured by items 1 through the number of columns in our `model_data`. We use the `glue()` function to dynamically determine the number of items. In this example, `glue("F1 = 1-{ncol(model_data)}")` will evaluate to ``"`r glue("F1 = 1-{ncol(model_data)}")`"``. Then, for each item, we specify what the item type is. We calculated this when we created the `clean_meta` data, so we can pull that variable out. Note that this assumes the the metadata is in the same order as the columns of `model_data`. Finally, we'll set a random seed to make sure we all get the same results (they should be pretty close without this).
 
 ```{r fit-mirt, results = "hide", cache = TRUE}
-library(mirt)
-
 model_3pl <- mirt(data = model_data, model = glue("F1 = 1-{ncol(model_data)}"),
                   itemtype = clean_meta$mirt_type,
                   technical = list(set.seed = 9416))
@@ -267,9 +337,7 @@ person_params
 
 To explore the assessment further, we will examine the item characteristic curves. For dichotomous items, these plots display the probability of providing a correct response, across the range of ability. For polytomous items, these plots show, across the range of ability, the probability of scoring in each category. To create the plots, we define range of ability we are interested in, and then calculate the probabilities at each ability level using the custom `icc_calc()` function.
 
-```{r iccs, warning = FALSE, results = "hide", cache = TRUE}
-plan(multiprocess)
-
+```{r iccs, warning = FALSE, results = "hide", cache = TRUE, dependson = "functions"}
 iccs <- crossing(theta = seq(-3, 3, by = 0.01),
                  itemid = colnames(model_data)) %>%
   left_join(item_params, by = "itemid") %>%
@@ -325,14 +393,13 @@ test_dist <- clean_ied %>%
 ggplot(test_dist, aes(x = score)) +
   geom_histogram(bins = 20, color = "black", alpha = 0.8) +
   facet_wrap(~measure, scales = "free", labeller = label_parsed) +
+  labs(x = expression(theta), y = "Respondents") +
   theme_bw()
 ```
 
 Another important aspect of an assessment scaled with IRT is the test information function, which is the basis for the conditional standard error of measurement. The item information can be calculated using the custom `info_calc()` function. We then aggregate across all items to get the test information, and calculate the associated standard error. Finally, we can plot both functions, as shown in Figure \@ref(fig:test-info).
 
-```{r test-info, cache = TRUE, warning = FALSE, results = "hide", fig.asp = 0.618, fig.cap = "Test information function and associated conditional standard error of measurement."}
-plan(multiprocess)
-
+```{r test-info, cache = TRUE, dependson = "functions", warning = FALSE, results = "hide", fig.asp = 0.618, fig.cap = "Test information function and associated conditional standard error of measurement."}
 info <- crossing(theta = seq(-3, 3, by = 0.01),
                       itemid = colnames(model_data)) %>%
   left_join(item_params, by = "itemid") %>%
@@ -356,9 +423,98 @@ ggplot(test_info, aes(x = theta, y = value)) +
 
 ## Model Fit
 
-```{r expected-scores, warning = FALSE, results = "hide"}
-plan(multiprocess)
+For any statistical analysis, it is important to assess how well the estimated model represents, or fits, the observed data. In general, there are two types of model fit: absolute and relative fit. Absolute fit directly assesses how well the estimated parameters reflect the data. This can be assessed at the item and model level. Relative fit is used to compare competing models to determine which should be preferred.
 
+### Item-Level Absolute Fit {#item-fit}
+
+For assessing item-level fit, we can calculate standardized residuals [known as the $Q1$ statistic; @yen_1981]. This is done by splitting respondents into quadrature nodes (in this example 10), and then comparing the observed performance of respondents in that group to the model expected performance. Using the observed and expected frequencies, we can then calculate a $\chi^2$ statistic to determine whether the item shows acceptable model fit. A significant $\chi^2$ test indicates poor model fit. This measure is visualized below, and all statistics are summarized in Table \@ref(tab:sr-table).
+
+```{r srs, warning = FALSE, results = "hide", cache = TRUE, dependson = "functions"}
+person_groups <- person_params %>%
+  mutate(group = cut_interval(theta, n = 10),
+         quad = as.numeric(group))
+
+quad_summary <- clean_ied %>%
+  pivot_longer(cols = -c(studentid, gender),
+               names_to = "item", values_to = "score") %>%
+  filter(!is.na(score)) %>%
+  left_join(select(person_groups, studentid, theta, quad), by = "studentid") %>%
+  group_by(quad, item) %>%
+  summarize(n = n(), total_score = sum(score), total_theta = sum(theta)) %>%
+  ungroup() %>%
+  mutate(prop = case_when(n < 5 ~ NA_real_,
+                          TRUE ~ total_score / n),
+         theta = case_when(n < 5 ~ NA_real_,
+                           TRUE ~ total_theta / n))
+
+srs <- quad_summary %>%
+  select(quad, n, prop, theta, itemid = item) %>%
+  left_join(item_params, by = "itemid") %>%
+  pmap_dfr(sr_calc) %>%
+  nest(sr_data = -c(itemid)) %>%
+  left_join(iccs, by = "itemid")
+```
+
+```{r display-sr, echo = FALSE}
+sr_plots <- meta %>%
+  select(itemid, itemtype, NIS, maxscore) %>%
+  left_join(mutate(srs, itemid = as.double(itemid)), by = "itemid") %>%
+  pmap(sr_plot)
+
+plots_svg <- map(sr_plots, function(x) {
+  xmlSVG({show(x)}, standalone = TRUE)
+})
+
+paging <- JS("function(slick,index) {
+                return '<a>'+(dotObj[index])+'</a>';
+              }")
+s2 <- htmltools::tags$script(
+  sprintf("var dotObj = %s", jsonlite::toJSON(clean_meta$itemid))
+)
+opts_dot_id <- settings(
+    initialSlide = 0,
+    slidesToShow = 1,
+    focusOnSelect = TRUE,
+    dots = TRUE,
+    customPaging = paging
+)
+
+slick_dots_id <- slickR(
+  obj = plots_svg,
+  height = 500,
+  width = "95%"
+) + opts_dot_id
+
+htmltools::browsable(htmltools::tagList(s2, slick_dots_id))
+```
+
+```{r sr-table}
+srs %>%
+  select(-icc_data) %>%
+  unnest(sr_data) %>%
+  group_by(itemid) %>%
+  summarize(n = sum(n), chisq = sum(chisq),  df = sum(df)) %>%
+  mutate(n = prettyNum(n, big.mark = ","),
+         pvalue = pchisq(chisq, df, lower.tail = FALSE),
+         chisq = sprintf("%0.1f", chisq),
+         print_pvalue = sprintf("%0.3f", pvalue),
+         print_pvalue = case_when(print_pvalue == "0.000" ~ "<0.001",
+                                  TRUE ~ paste0(print_pvalue))) %>%
+  mutate(print_pvalue = cell_spec(print_pvalue, "html", color = ifelse(pvalue < .05, "black", "grey"),
+                                  background = ifelse(pvalue < .05, "#E14646", "#FFFFFF"))) %>%
+  select(-pvalue) %>%
+  kable(align = c("c", rep("r", 4)), booktabs = TRUE,
+        col.names = c("Item", "$\\pmb{n}$", "$\\pmb{\\chi^2}$", "df", "$\\pmb{p}$-value"),
+        caption = "Item-Level Standardized Residuals", escape = FALSE) %>%
+  kable_styling() %>%
+  row_spec(0, bold = TRUE)
+```
+
+### Model-Level Absolute Fit {#model-level}
+
+At the model level, we also assess fit by using residuals. For every respondent and item, we can calculate the model expectation and then compare to the observed score. As with any model, the difference between the two is the residual. In this example, we'll calculate the residuals using the custom `expected_calc()` function.
+
+```{r expected-scores, warning = FALSE, results = "hide", cache = TRUE, dependson = "functions"}
 residuals <- clean_ied %>%
   pivot_longer(cols = -c(studentid, gender),
                names_to = "itemid", values_to = "obs_score") %>%
@@ -369,18 +525,140 @@ residuals <- clean_ied %>%
   select(studentid, gender, itemid, obs_score, exp_score, residual)
 ```
 
+From these residuals we can calculate the $Q3$ statistic [@yen_1984]. One assumption of the IRT models is that residuals should be should be random and uncorrelated, normally distributed, and be close to zero on average. If residuals of pairs of items are correlated, this may indicate additional dimensioinality not captured by the model, called local item dependence (LID). The $Q3$ statistic is the correlation between the residuals of a pair of items. Thus, for this 40 item test there are 780 $Q3$ statistics (the number of elements in the lower triangle of the correlation matrix). As a general rule, $Q3$ values larger than $\pm 0.2$ are considered serious violations. Positive values indicate items share additional common dimensionality, and negative values indicate extra dimensionality not shared by those particular items. Using our residuals data, we can calculate the residual correlations as shown below.
+
+```{r calc-q3}
+corrs <- residuals %>%
+  distinct() %>%
+  select(studentid, itemid, residual) %>%
+  pivot_wider(names_from = itemid, values_from = residual) %>%
+  select(-studentid) %>%
+  cor(use = "pairwise.complete.obs")
+
+corrs <- corrs %>%
+  as_tibble(rownames = "item1") %>%
+  pivot_longer(cols = -item1, names_to = "item2", values_to = "cor") %>%
+  mutate(lower_tri = as.vector(lower.tri(corrs)))  %>%
+  filter(lower_tri) 
+
+q3 <- pull(corrs, cor)
+```
+
+The distribution of the $Q3$ statistics for this assessment is shown in Figure \@ref(fig:plot-q3). Overall, the distribution has a mean of `r sprintf("%0.2f", mean(q3))` and a standard deviation of `r sprintf("%0.2f", sd(q3))`, with `r sum(!between(q3, -0.2, 0.2))` correlations outside the $\pm 0.2$ range. Thus, there is a strong indication of additional dimensionality not captured by the model. The correlations outside of $\pm 0.2$ are shown in Table \@ref(tab:bad-q3).
+
+(ref:plot-q3-cap) Distribution of local item dependence $Q3$ statistics.
+
+```{r plot-q3, fig.asp = 0.618, fig.cap = "(ref:plot-q3-cap)"}
+ggplot() +
+  geom_histogram(aes(x = q3, y = stat(density)), boundary = 0, binwidth = 0.02,
+                 color = "black",  alpha = 0.8) +
+  scale_x_continuous(breaks = seq(-0.5, 0.5, 0.1)) +
+  labs(x = "*Q3*", y = "Density") +
+  theme_bw() +
+  theme(axis.title.x = element_markdown())
+```
+
+(ref:bad-q3-cap) Flagged $Q3$ Statistics
+
+```{r bad-q3}
+corrs %>%
+  filter(!between(cor, -0.2, 0.2)) %>%
+  select(-lower_tri) %>%
+  mutate(cor = sprintf("%0.2f", cor)) %>%
+  kable(align = c("c", "c", "r"), booktabs = TRUE,
+        col.names = c("Item 1", "Item 2", "Q3"),
+        caption = "(ref:bad-q3-cap)") %>%
+  kable_styling() %>%
+  row_spec(0, bold = TRUE)
+```
+
+```{r sr-test-calc, include = FALSE}
+all_sr <- srs %>%
+  select(-icc_data) %>%
+  unnest(sr_data) %>%
+  pull(sr)
+```
+
+We can also examine the distribution of standardized residuals that we calculated [earlier](#item-fit). Because the residuals have been standardized, we expect this distribution to follow a standard normal distribution, $\mathcal{N}(\mu=0,\ \sigma= 1)$. In Figure \@ref(fig:sr-test-plot), the distribution of the residuals is shown in black and the standard normal distribution in blue. The residuals have a mean of `r sprintf("%0.2f", mean(all_sr))` and a standard deviation of `r sprintf("%0.2f", sd(all_sr))`. This is reflected in Figure \@ref(fig:sr-test-plot), where we see the observed distribution has wider variability than the expected distribution, indicating that misfit is present in our model.
+
+```{r sr-test-plot, fig.asp = 0.618, fig.cap = "Distribution of standardized residuals."}
+all_sr <- srs %>%
+  select(-icc_data) %>%
+  unnest(sr_data) %>%
+  pull(sr)
+
+ggplot(mapping = aes(x = all_sr)) +
+  geom_histogram(aes(y = stat(density)), bins = 30, color = "black",
+                 alpha =  0.3) +
+  geom_density(color = "black", fill = "black", size = 2, alpha =  0.5) +
+  stat_function(fun = dnorm, n = 500, args = list(mean =  0, sd = 1),
+                color = "#56B4E9", size = 2, alpha = 0.8) +
+  labs(x = "Standardized Residuals", y = "Density") +
+  theme_bw()
+```
+
+
+### Relative Fit
+
+Model comparisons are used to evaluate the relative fit of two more models. That is, given multiple models, which one should we prefer? Due to the likely [multidimensionality we observed](#model-level) in our original unidimensional model, we'll estimate a multidimensional model to compare it to. In the multidimensional model, we'll still allow all items to measure a general factor, now called `G`. We'll also add four additional factors, defined by the `contentcode{#}` variables in our item meta data, `meta`.
+
+```{r mirt-estimate, results = "hide", cache = TRUE}
+mirt_spec <- glue("G = 1-{ncol(model_data)}
+                   C1 = 2-5,10,15-18,20-21,29,32-34
+                   C3 = 2,4-7,9,13,18,20-21,27-29,35,39
+                   C4 = 3,12-14,22-26,31,38,
+                   C5 = 15-17,30-33,36-37,40")
+
+model_mirt <- mirt(data = model_data, model = mirt_spec,
+                  itemtype = clean_meta$mirt_type, method = "QMCEM",
+                  technical = list(set.seed = 9416))
+```
+
+The **mirt** package offers several methods for comparing models. In addition to the omnibus likelihood ratio test, there are also five fit indices based on information criteria: Akaike information criterion [AIC; @akaike_1974], sample size adjusted AIC [AICc; @hurvich_1989], Bayesian information criterion [BIC; @schwarz_1978], sample size adjusted BIC [SABIC; @sclove_1987], and the Hannan-Quinn criterion [HQ; @hannan_1979]. These are accessed by using the `anova()` function. 
+
+```{r model-compare-calc}
+model_compare <- anova(model_3pl, model_mirt) %>%
+  as_tibble() %>%
+  mutate(Model = c("UIRT", "MIRT"),
+         p = sprintf("%0.3f", p),
+         p = case_when(p == "0.000" ~ "< 0.001",
+                       TRUE ~ p)) %>%
+  mutate_if(is.double, ~sprintf("%0.0f", .x))
+```
+
+The information based fit indices for model comparisons are shown in Table \@ref(tab:model-compare). For the information criteria, a lower value indicates better fit. For all indices, the multidimensional model has lower values, indicating this model is preferred. The $\chi^2$ is also significant ($\chi^2_{(`r model_compare[["df"]][2]`)} = `r model_compare[["X2"]][2]`$, $p `r model_compare[["p"]][2]`$). Here the `r model_compare[["df"]][2]` degrees of freedom represent the `r model_compare[["df"]][2]` parameters that are estimated in the multidimensional model that are not estimated in the unidimensional model, and the significant *p*-value indicates that adding the constraints has a negative impact on model fit. In sum, all model comparisons indicate the multidimensional model provides a better representation of the data than the unidimensional data, even after accounting for model complexity. However, this does not tell us whether or not the multidimensional model has adequate fit to the data. Model comparisons are most effective when you have multiple models show adequate absolute fit to the data. Then, relative fit indices can be used to find the perfered model among those that fit the data.
+
+```{r model-compare}
+model_compare %>%
+  select(Model, AIC, AICc, BIC, SABIC, HQ, Loglikelihood = logLik) %>%
+  kable(align = "c", booktabs = TRUE,
+        caption = "Relative Fit Indices") %>%
+  kable_styling() %>%
+  row_spec(0, bold = TRUE) %>%
+  footnote(general = "UIRT = Unidimensional IRT; MIRT = Mulidimensional IRT",
+           footnote_as_chunk = TRUE, general_title = "Note.")
+```
+
+
+## Other Methods for IRT in *R*
+
+The **mirt** package is not the only way to estimate IRT models in *R*. @choi_2019 provides a thorough overview of 45 *R* packages that can be used to conduct analyses using IRT including differential item functioning and equating. The paper also discusses the features available in each package, making this an excellent resource when trying to find a package to complete a specific analysis.
+
+For more advanced work and better methods for model fit, Bayesian modeling offers much more flexibility. The *Stan* probabilistic programming language [@stan] offers one way to define these models in *R* with the **rstan** package [@R-rstan]. The **brms** package also offers an interface to *Stan* for estimating linear and non-linear multilevel models, without having to learn the *Stan* language [@R-brms; @brms2017; @brms2018]. @burkner_2019 provides a comprehensive overview of how to specify, estimate, and evaluate IRT models, along with comparisons to other *R* packages.
+
 
 ## References {-}
 
 ```{r write-packages, include = FALSE}
 if (!file.exists("bib/packages.bib")) file.create("bib/packages.bib")
 suppressWarnings(
-  knitr::write_bib(c(.packages()), "bib/packages.bib")
+  knitr::write_bib(c(.packages(), "rstan", "brms"), "bib/packages.bib")
 )
 
 # Correct capitalization in packages
 read_lines("bib/packages.bib") %>%
   str_replace_all("mirt:", "{mirt}:") %>%
+  str_replace_all("brms:", "{brms}:") %>%
   str_replace_all("ggplot2:", "{ggplot2}:") %>%
   str_replace_all(" Stan", " {Stan}") %>%
   str_replace_all("rstan:", "{RStan}:") %>%
