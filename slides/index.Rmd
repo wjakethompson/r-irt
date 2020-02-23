@@ -10,17 +10,6 @@ output: ratlas::slides_html
 options(htmltools.dir.version = FALSE)
 ```
 
-```{r load-refs, include = FALSE, cache = FALSE}
-library(RefManageR)
-BibOptions(check.entries = FALSE,
-           style = "markdown",
-           cite.style = "authoryear",
-           bib.style = "authoryear",
-           style = "html")
-refs <- ReadBib(file = here("full-example", "bib", "refs.bib"), check =  FALSE)
-```
-
-
 class: reg-slide
 layout: true
 
