@@ -34,7 +34,7 @@ body { font-family: 'Montserrat', sans-serif}
 }
 .title-slide h3 {
   color: #165C7D;
-  font-size: 120%;
+  font-size: 24pt;
   line-height: 0.5em;
 }
 
@@ -55,7 +55,7 @@ body { font-family: 'Montserrat', sans-serif}
 }
 .reg-section p {
  position: absolute;
- font-size: 150%;
+ font-size: 24pt%;
  top: 55%;
 }
 
