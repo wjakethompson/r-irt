@@ -218,7 +218,7 @@ sr_plot <- function(itemid, itemtype, NIS, maxscore, sr_data, icc_data) {
     expand_limits(y = c(0, (NIS - 1))) +
     labs(x = expression(theta),
          y = expression(paste("P(X >= x | ", theta, ")")),
-         title = "Item Characteristic Curve",
+         title = "Standardized Residuals",
          subtitle = subtitle,
          color = "Score") +
     theme_bw() +
@@ -351,6 +351,13 @@ icc_plots <- meta %>%
   left_join(mutate(iccs, itemid = as.double(itemid)), by = "itemid") %>%
   pmap(icc_plot)
 
+ggsave(filename = "dichot-icc.png", icc_plots[[3]],
+       path = here("slides", "figures"), width = 6, height = 6, units = "in",
+       dpi = "retina")
+ggsave(filename = "poly-icc.png", icc_plots[[7]],
+       path = here("slides", "figures"), width = 6, height = 6, units = "in",
+       dpi = "retina")
+
 plots_svg <- map(icc_plots, function(x) {
   xmlSVG({show(x)}, standalone = TRUE)
 })
@@ -460,6 +467,13 @@ sr_plots <- meta %>%
   select(itemid, itemtype, NIS, maxscore) %>%
   left_join(mutate(srs, itemid = as.double(itemid)), by = "itemid") %>%
   pmap(sr_plot)
+
+ggsave(filename = "dichot-sr.png", sr_plots[[3]],
+       path = here("slides", "figures"), width = 6, height = 6, units = "in",
+       dpi = "retina")
+ggsave(filename = "poly-sr.png", sr_plots[[7]],
+       path = here("slides", "figures"), width = 6, height = 6, units = "in",
+       dpi = "retina")
 
 plots_svg <- map(sr_plots, function(x) {
   xmlSVG({show(x)}, standalone = TRUE)
