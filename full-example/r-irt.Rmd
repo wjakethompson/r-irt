@@ -14,21 +14,21 @@ link-citations: yes
 ---
 
 ```{r setup, warning = FALSE, include = FALSE}
-library(tidyverse)
-library(readxl)
-library(mirt)
-
-library(furrr)
-
-library(htmlwidgets)
-library(slickR)
-library(svglite)
-library(knitr)
-library(ggtext)
-library(kableExtra)
-
-library(here)
-library(glue)
+needed_packages <- c("remotes", "tidyverse", "readxl", "mirt", "furrr",
+                     "htmlwidgets", "slickR", "svglite", "knitr", "ggtext", "kableExtra", "here", "glue")
+load_packages <- function(x) {
+  if (!(x %in% installed.packages())) {
+    if (x == "furrr") {
+      remotes::install_github("")
+    } else if (x == "ggtext") {
+      remotes::install_github("")
+    } else {
+      install.packages(x, repos = "https://cran.rstudio.com/")
+    }
+  }
+  suppressPackageStartupMessages(require(x, character.only = TRUE))
+}
+vapply(needed_packages, load_packages, logical(1))
 
 knitr::opts_chunk$set(
   echo = TRUE,

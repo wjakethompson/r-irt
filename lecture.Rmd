@@ -134,9 +134,9 @@ model_spec <- mirt.model("F1 = 1-29
 (ref:prior-dist-cap) Prior distributions for the 3PL IRT model, as defined in `model_spec`.
 
 ```{r prior-dist, fig.cap = "(ref:prior-dist-cap)", echo = FALSE, cache = TRUE}
-tibble(alpha = rlnorm(5000000, meanlog = 0, sdlog = 1),
-       beta = rnorm(5000000, mean = 0, sd = 2),
-       gamma = rnorm(5000000, mean = -1.39, sd = 1)) %>%
+tibble(alpha = rlnorm(1000000, meanlog = 0, sdlog = 1),
+       beta = rnorm(1000000, mean = 0, sd = 2),
+       gamma = rnorm(1000000, mean = -1.39, sd = 1)) %>%
   mutate(a = alpha,
          b = -1 * (beta / alpha),
          c = exp(gamma) / (1 + exp(gamma)),
