@@ -42,6 +42,7 @@ body { font-family: 'Montserrat', sans-serif}
   background-image: url("https://i.imgur.com/RLKNy4p.png"), url("https://i.imgur.com/ZPlbqvg.png");
   background-size: 9% 16%, cover;
   background-position: 3% 100%, center center;
+  font-size: 24pt;
 }
 
 .reg-section {
@@ -55,13 +56,14 @@ body { font-family: 'Montserrat', sans-serif}
 }
 .reg-section p {
  position: absolute;
- font-size: 24pt%;
+ font-size: 120%;
  top: 55%;
 }
 
 .alt-slide {
   background-image: url("https://i.imgur.com/SmFnVsI.png");
   background-size: cover;
+  font-size: 24pt;
 }
 
 .alt-section {
@@ -75,7 +77,7 @@ body { font-family: 'Montserrat', sans-serif}
 }
 .alt-section p {
  position: absolute;
- font-size: 150%;
+ font-size: 120%;
  top: 55%;
 }
 
