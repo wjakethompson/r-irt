@@ -2,6 +2,7 @@
 title: "Applications of Item Response Theory in R"
 author:
   - "W. Jake Thompson, Ph.D."
+date: "`r Sys.Date()`"
 output: ratlas::slides_html
 ---
 

@@ -24,7 +24,7 @@ body { font-family: 'Montserrat', sans-serif}
 
 /* Slide formats */
 .title-slide {
-  background-image: url("https://i.imgur.com/rz4lUV9.png?1");
+  background-image: url("assets/img/title.png");
   background-size: cover;
   text-shadow: none;
 }
