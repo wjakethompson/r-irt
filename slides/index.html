@@ -4,7 +4,6 @@
     <title>Applications of Item Response Theory in R</title>
     <meta charset="utf-8" />
     <meta name="author" content="W. Jake Thompson, Ph.D." />
-    <meta name="date" content="2020-02-23" />
     <link href="libs/remark-css/default.css" rel="stylesheet" />
     <link rel="stylesheet" href="assets/css/atlas.css" type="text/css" />
     <link rel="stylesheet" href="assets/css/atlas-fonts.css" type="text/css" />
@@ -15,9 +14,11 @@ class: center, middle, inverse, title-slide
 
 # Applications of Item Response Theory in R
 ### W. Jake Thompson, Ph.D.
-### 2020-02-23
 
 ---
+
+
+
 
 
 
@@ -93,13 +94,41 @@ class: center, middle
 ---
 # Item Characteristic Curves
 
-
+.pull-left[&lt;img src="figures/dichot-icc.png" width="90%" /&gt;]
+.pull-right[&lt;img src="figures/poly-icc.png" width="90%" /&gt;]
 
 ---
 #  Test Characteristics
 
-.pull-left[&lt;img src="figures/test-dist-1.png" width="2688" /&gt;]
-.pull-right[&lt;img src="figures/test-info-1.png" width="2688" /&gt;]
+.pull-left[&lt;img src="figures/test-dist-1.png" width="90%" /&gt;]
+.pull-right[&lt;img src="figures/test-info-1.png" width="90%" /&gt;]
+
+---
+# Item-Level Fit
+
+.pull-left[&lt;img src="figures/dichot-sr.png" width="90%" /&gt;]
+.pull-right[&lt;img src="figures/poly-sr.png" width="90%" /&gt;]
+
+---
+# Model-Level Fit
+
+- Absolute fit
+
+.pull-left[&lt;img src="figures/plot-q3-1.png" width="90%" /&gt;]
+.pull-right[&lt;img src="figures/sr-test-plot-1.png" width="90%" /&gt;]
+
+- Relative fit through model comparisons
+
+---
+# Beyond **mirt**
+
+- Many R packages for IRT
+  - Choi &amp; Asilkalkan (2019) provide an overview of features offered in 45 (!!!) packages
+  
+- More flexibility with Bayesian modeling
+  - *Stan* (Carpenter et al., 2017)
+  - **brms** (Bürkner, 2019, 2020)
+  - **rstan** (Guo, Gabry, &amp; Goodrich, 2020)
 
 ---
 layout: false 

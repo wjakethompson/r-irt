@@ -2,13 +2,24 @@
 title: "Applications of Item Response Theory in R"
 author:
   - "W. Jake Thompson, Ph.D."
-date: "`r Sys.Date()`"
+csl: csl/apa.csl
 output: ratlas::slides_html
 ---
 
 ```{r setup, include=FALSE}
 options(htmltools.dir.version = FALSE)
 ```
+
+```{r load-refs, include = FALSE, cache = FALSE}
+library(RefManageR)
+BibOptions(check.entries = FALSE,
+           style = "markdown",
+           cite.style = "authoryear",
+           bib.style = "authoryear",
+           style = "html")
+refs <- ReadBib(file = here("full-example", "bib", "refs.bib"), check =  FALSE)
+```
+
 
 class: reg-slide
 layout: true
@@ -81,13 +92,41 @@ class: center, middle
 ---
 # Item Characteristic Curves
 
-
+.pull-left[`r knitr::include_graphics("figures/dichot-icc.png")`]
+.pull-right[`r knitr::include_graphics("figures/poly-icc.png")`]
 
 ---
 #  Test Characteristics
 
 .pull-left[`r knitr::include_graphics("figures/test-dist-1.png")`]
 .pull-right[`r knitr::include_graphics("figures/test-info-1.png")`]
+
+---
+# Item-Level Fit
+
+.pull-left[`r knitr::include_graphics("figures/dichot-sr.png")`]
+.pull-right[`r knitr::include_graphics("figures/poly-sr.png")`]
+
+---
+# Model-Level Fit
+
+- Absolute fit
+
+.pull-left[`r knitr::include_graphics("figures/plot-q3-1.png")`]
+.pull-right[`r knitr::include_graphics("figures/sr-test-plot-1.png")`]
+
+- Relative fit through model comparisons
+
+---
+# Beyond **mirt**
+
+- Many R packages for IRT
+  - Choi & Asilkalkan (2019) provide an overview of features offered in 45 (!!!) packages
+  
+- More flexibility with Bayesian modeling
+  - *Stan* (Carpenter et al., 2017)
+  - **brms** (Bürkner, 2019, 2020)
+  - **rstan** (Guo, Gabry, & Goodrich, 2020)
 
 ---
 layout: false 
