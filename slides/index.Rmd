@@ -17,80 +17,88 @@ layout: true
 class: reg-section
 # Materials
 
-
 ---
-
 # Where can I get the stuff?
 
 - Slides: https://epsy922.wjakethompson.com
 
-- RStudio Cloud:
-
 - Github: https://github.com/wjakethompson/r-irt
 
 ---
-
 class: reg-section
-# Heading Slide 2
+# Welcome to R
 
 ---
+# R Statistical Programming
 
-# Slide 2
+- Programming language for data analysis
+  - Like SAS, Mplus, SPSS, but better
+  
+- End to end data analysis &mdash; no dependence on other programs
 
-.pull-left[
-Left text 
-- bullet 1
+- Professional graphics
 
-- bullet 2
-
-- bullet 3<sup>1</sup>
-]
-
-.pull-right[
-Right text 
-- bullet 4
-
-- bullet 5
-
-- bullet 6
-]
-
---
-
-.footnote[
-[1] footnote for bullet 3
-]
+- Free and open source!
 
 ---
+# Extending R
 
+- R is like the default phone software
 
-# R Plots
+- Just like we download apps for our phones, we can download packages for R
 
-```{r cars}
-par(mar = c(4, 4, 1, .1))
-plot(cars, pch = 19, col = 'darkgray', las = 1) #<<
-```
+- Packages can replace base functionality, or offer new features
+  - [**tidyverse**](https://tidyverse.org)
+      - Suite of packages for data science
+      - Data visualization, manipulation, tidying
+  - [**mirt**](https://cran.r-project.org/web/packages/mirt/index.html)
+      - Estimate IRT models
 
 ---
+# Using R
 
-# Tables
+- R : iOS :: **Integrated Development Environment** : iPhone
 
-If you want to generate a table, make sure it is in the HTML format (instead of Markdown or other formats), e.g.,
+- Many choices of IDE
+  - RStudio
+  - R Console
+  - Emacs + ESS, Vim, Sublime
 
-```{r}
-knitr::kable(head(iris), format = 'html')
-```
+- Today: RStudio Cloud
+
+---
+class: center, middle
+
+.huge[[**bit.ly/epsy922-r-irt**](http://bit.ly/epsy922-r-irt)]
+
+---
+# What's Next?
+
+- More analyses included in the `full-example` directory
+  - Polytomous items
+  - Multidimensional model
+
+---
+# Item Characteristic Curves
+
+
+
+---
+#  Test Characteristics
+
+.pull-left[`r knitr::include_graphics("figures/test-dist-1.png")`]
+.pull-right[`r knitr::include_graphics("figures/test-info-1.png")`]
 
 ---
 layout: false 
 class: final-slide
 
-# Connect With Us!
+# Questions?
 
-`r fontawesome::fa("globe", fill = "#165C7D")` [ATLAS4Learning.org](https://atlas4learning.org)
+`r fontawesome::fa("globe", fill = "#165C7D")` [wjakethompson.com](https://wjakethompson.com)
 
-`r fontawesome::fa("envelope", fill = "#165C7D")` [ATLAS-AAI@ku.edu](mailto:atlas-aai@ku.edu)
+`r fontawesome::fa("envelope", fill = "#165C7D")` [wjakethompson@ku.edu](mailto:wjakethompson@ku.edu)
 
-`r fontawesome::fa("twitter", fill = "#165C7D")` [@ATLAS4Learning](https://twitter.com/atlas4learning)
+`r fontawesome::fa("twitter", fill = "#165C7D")` [@wjakethompson](https://twitter.com/wjakethompson)
 
-`r fontawesome::fa("github", fill = "#165C7D")` [@ATLAS-AAI](https://github.com/atlas-aai)
+`r fontawesome::fa("github", fill = "#165C7D")` [@wjakethompson](https://github.com/wjakethompson)
