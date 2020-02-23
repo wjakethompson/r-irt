@@ -15,29 +15,19 @@ layout: true
 
 ---
 class: reg-section
-# Section Heading
+# Materials
 
-Section Presenter
 
 ---
 
-# Slide 1
+# Where can I get the stuff?
 
-- bullet 1
+- Slides: epsy922.wjakethompson.com
 
---
+- RStudio Cloud:
 
-- bullet 2
+- Github: github.com/wjakethompson/r-irt
 
---
-
-- bullet 3<sup>1</sup>
-
---
-
-.footnote[
-[1] footnote for bullet 3
-]
 ---
 
 class: reg-section
