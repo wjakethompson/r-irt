@@ -75,7 +75,9 @@ clean_ied <- ied %>%
 We next have to specify how each item will be modeled. In this example, every item will be estimated using the 3PL IRT model [@birnbaum_1968]. To specify item models, we create of vector model recognized by **mirt**. Conveniently, the 3PL model is denoted `3PL`. Because all items have the same model, we create a vector that repeats `3PL` once for each item. For a list of available models, see [`?mirt()`](https://rdrr.io/cran/mirt/man/mirt.html).
 
 ```{r mirt-type}
-mirt_type <- rep("3PL", length(dichot_items))
+mirt_type_3pl <- rep("3PL", length(dichot_items))
+mirt_type_2pl <- rep("2PL", length(dichot_items))
+mirt_type_1pl <- rep("Rasch", length(dichot_items))
 ```
 
 To estimate the IRT model, we'll use the **mirt** package [@R-mirt]. This function requires that the data include only item responses, so we'll create a data set, `model_data`, that is the same as the original data but with the `studentid` and `gender` columns removed.
@@ -125,10 +127,15 @@ Thus, we must define our prior on the scale of the estimated parameters in equat
 For the $\alpha$ parameter, we define a lognormal prior with a mean of 0 and a standard deviation of 1. The $\beta$ parameter (called $d$ in **mirt**) is given a normal prior with a mean of 0 and a standard deviation of 2. Finally, $\gamma$ is given a normal prior with a mean of -1.39 and standard deviation. These priors for parameterization in equation \@ref(eq:3pl) are shown in Figure \@ref(fig:prior-dist).
  
 ```{r model-spec}
-model_spec <- mirt.model("F1 = 1-29
-                          PRIOR = (1-29, a1, lnorm, 0, 1),
-                                  (1-29, d, norm, 0, 2),
-                                  (1-29, g, norm, -1.39, 1)")
+model_spec_3pl <- mirt.model("F1 = 1-29
+                              PRIOR = (1-29, a1, lnorm, 0, 1),
+                                      (1-29, d, norm, 0, 2),
+                                      (1-29, g, norm, -1.39, 1)")
+model_spec_2pl <- mirt.model("F1 = 1-29
+                              PRIOR = (1-29, a1, lnorm, 0, 1),
+                                      (1-29, d, norm, 0, 2)")
+model_spec_1pl <- mirt.model("F1 = 1-29
+                              PRIOR = (1-29, d, norm, 0, 2)")
 ```
 
 (ref:prior-dist-cap) Prior distributions for the 3PL IRT model, as defined in `model_spec`.
@@ -154,8 +161,14 @@ tibble(alpha = rlnorm(1000000, meanlog = 0, sdlog = 1),
 Next, for each item, we specify what the item type is. We calculated this when we created the `mirt_type` vector. Finally, we'll set a random seed to make sure we all get the same results (they should be pretty close without this).
 
 ```{r fit-mirt, results = "hide", cache = TRUE}
-model_3pl <- mirt(data = model_data, model = model_spec,
-                  itemtype = mirt_type, technical = list(set.seed = 9416))
+model_3pl <- mirt(data = model_data, model = model_spec_3pl,
+                  itemtype = mirt_type_3pl, technical = list(set.seed = 9416))
+
+model_2pl <- mirt(data = model_data, model = model_spec_2pl,
+                  itemtype = mirt_type_2pl, technical = list(set.seed = 9416))
+
+model_1pl <- mirt(data = model_data, model = model_spec_1pl,
+                  itemtype = mirt_type_1pl, technical = list(set.seed = 9416))
 ```
 
 Now we've estimated the model!
@@ -181,12 +194,14 @@ Often, it is more useful to think about the parameters using the more well known
 
 ```{r irt-coef}
 coef(model_3pl, IRTpars = TRUE)
+coef(model_2pl, IRTpars = TRUE)
+coef(model_1pl, IRTpars = TRUE)
 ```
 
 The last problem to solve is that the coefficients are returned in a list format. This is done because, depending on the estimated model, not every item will have the same set of parameters (e.g., if we included polytomous items). Thus, for consistency, the **mirt** package always returns the parameters in a list format, which can handle any configuration of parameters. However, with some **tidyverse** magic, we can create a data frame that has one row per item since all of our items have the same set of parameters.
 
 ```{r item-params}
-item_params <- coef(model_3pl, IRTpars = TRUE) %>%
+item_params_3pl <- coef(model_3pl, IRTpars = TRUE) %>%
   list_modify(GroupPars = zap()) %>%
   imap_dfr(function(x, y) {
     as_tibble(x) %>%
@@ -196,7 +211,25 @@ item_params <- coef(model_3pl, IRTpars = TRUE) %>%
   rename(c = g) %>%
   replace_na(list(c = 0, u = 1))
 
-item_params
+item_params_2pl <- coef(model_2pl, IRTpars = TRUE) %>%
+  list_modify(GroupPars = zap()) %>%
+  imap_dfr(function(x, y) {
+    as_tibble(x) %>%
+      add_column(itemid = y, .before = 1) %>%
+      select(itemid, a, b, everything())
+  }) %>%
+  rename(c = g) %>%
+  replace_na(list(c = 0, u = 1))
+
+item_params_1pl <- coef(model_1pl, IRTpars = TRUE) %>%
+  list_modify(GroupPars = zap()) %>%
+  imap_dfr(function(x, y) {
+    as_tibble(x) %>%
+      add_column(itemid = y, .before = 1) %>%
+      select(itemid, a, b, everything())
+  }) %>%
+  rename(c = g) %>%
+  replace_na(list(c = 0, u = 1))
 ```
 
 #### Person Parameters
@@ -209,6 +242,56 @@ person_params <- fscores(model_3pl) %>%
   rowid_to_column(var = "studentid")
 
 person_params
+```
+
+## Item Regressions
+
+```{r}
+icc_3pl <- item_params_3pl %>%
+  pmap(function(itemid, a, b, c, u) {
+    tibble(theta = seq(-3, 3, by = 0.01)) %>%
+      mutate(prob = c + (1 - c) * inv_logit(a * (theta - b))) %>%
+      ggplot(aes(x = theta, y = prob)) +
+        geom_line(size = 2) +
+        scale_x_continuous(breaks = seq(-3, 3, by = 1)) +
+        expand_limits(y = c(0, 1)) +
+        labs(x = expression(theta),
+             y = expression(paste("P(X >= x | ", theta, ")")),
+             title = paste("Item", itemid)) +
+        theme_bw()
+  })
+
+icc_2pl <- item_params_2pl %>%
+  pmap(function(itemid, a, b, c, u) {
+    tibble(theta = seq(-3, 3, by = 0.01)) %>%
+      mutate(prob = c + (1 - c) * inv_logit(a * (theta - b))) %>%
+      ggplot(aes(x = theta, y = prob)) +
+        geom_line(size = 2) +
+        scale_x_continuous(breaks = seq(-3, 3, by = 1)) +
+        expand_limits(y = c(0, 1)) +
+        labs(x = expression(theta),
+             y = expression(paste("P(X >= x | ", theta, ")")),
+             title = paste("Item", itemid)) +
+        theme_bw()
+  })
+
+icc_1pl <- item_params_1pl %>%
+  pmap(function(itemid, a, b, c, u) {
+    tibble(theta = seq(-3, 3, by = 0.01)) %>%
+      mutate(prob = c + (1 - c) * inv_logit(a * (theta - b))) %>%
+      ggplot(aes(x = theta, y = prob)) +
+        geom_line(size = 2) +
+        scale_x_continuous(breaks = seq(-3, 3, by = 1)) +
+        expand_limits(y = c(0, 1)) +
+        labs(x = expression(theta),
+             y = expression(paste("P(X >= x | ", theta, ")")),
+             title = paste("Item", itemid)) +
+        theme_bw()
+  })
+
+icc_3pl[[1]]
+icc_2pl[[1]]
+icc_1pl[[1]]
 ```
 
 
