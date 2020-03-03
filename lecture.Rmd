@@ -14,7 +14,7 @@ link-citations: yes
 ---
 
 ```{r setup, warning = FALSE, include = FALSE}
-needed_packages <- c("tidyverse", "readxl", "here", "mirt")
+needed_packages <- c("tidyverse", "readxl", "here", "mirt", "furrr")
 load_packages <- function(x) {
   if (!(x %in% installed.packages())) {
     install.packages(x, repos = "https://cran.rstudio.com/")
@@ -35,6 +35,106 @@ knitr::opts_chunk$set(
 ```{r functions, include = FALSE}
 inv_logit <- function(x) {
   1 / (1 + exp(-x))
+}
+icc_calc <- function(theta, itemid, a, b, c, u, .pb = NULL) {
+  if ((!is.null(.pb)) && inherits(.pb, "Progress") && (.pb$i < .pb$n)) {
+    .pb$tick()$print()
+  }
+  
+  dat <- tibble(theta = theta, itemid = itemid, a = a, b = b, c = c, u = u)
+  
+  icc <- dat %>%
+    unnest(cols = b) %>%
+    mutate(exp_score = c + (1 - c) * inv_logit(a * (theta - b))) %>%
+    add_row(exp_score = 1, .before = 1) %>%
+    add_row(exp_score = 0) %>%
+    rowid_to_column(var = "cat") %>%
+    mutate(cat = cat - 1,
+           theta = mean(theta, na.rm = TRUE),
+           itemid = unique(itemid[!is.na(itemid)]),
+           a = mean(a, na.rm = TRUE),
+           c = mean(c, na.rm = TRUE),
+           u = mean(u, na.rm = TRUE),
+           p = exp_score - lead(exp_score, n = 1, default = 0)) %>%
+    select(itemid, theta, cat, everything())
+
+  return(icc)
+}
+sr_calc <- function(quad, n, prop, theta, itemid, a, b, c, u, .pb = NULL) {
+  if ((!is.null(.pb)) && inherits(.pb, "Progress") && (.pb$i < .pb$n)) {
+    .pb$tick()$print()
+  }
+  
+  dat <- tibble(quad = quad, n = n, prop = prop, theta = theta, itemid = itemid,
+                a = a, b = b, c = c, u = u)
+  
+  icc <- dat %>%
+    unnest(cols = b) %>%
+    mutate(exp_score = c + (1 - c) * inv_logit(a * (theta - b))) %>%
+    add_row(exp_score = 1, .before = 1) %>%
+    add_row(exp_score = 0) %>%
+    rowid_to_column(var = "cat") %>%
+    mutate(cat = cat - 1,
+           theta = mean(theta, na.rm = TRUE),
+           itemid = unique(itemid[!is.na(itemid)]),
+           quad = mean(quad, na.rm = TRUE),
+           n = mean(n, na.rm = TRUE),
+           prop = mean(prop, na.rm = TRUE),
+           a = mean(a, na.rm = TRUE),
+           c = mean(c, na.rm = TRUE),
+           u = mean(u, na.rm = TRUE),
+           cat_p = exp_score - lead(exp_score, n = 1, default = 0),
+           p = cat * cat_p,
+           var = cat_p * (1 - cat_p)) %>%
+    select(itemid, theta, cat, everything()) %>%
+    group_by(quad, itemid, n, prop) %>%
+    summarize(max_score = max(cat) - 1, theta = mean(theta), p = sum(p),
+              var = sum(var)) %>%
+    ungroup() %>%
+    mutate(se = sqrt(var / n),
+           df = 1,
+           sr = (prop - p) / se,
+           bar_top = min(max_score, p + (1.96 * se)),
+           bar_bottom = max(0, p - (1.96 * se)),
+           chisq = sr^2)
+
+  return(icc)
+}
+sr_plot <- function(itemid, itemtype, NIS, maxscore, sr_data, icc_data) {
+  icc_data <- icc_data %>%
+    group_by(theta) %>%
+    summarize(exp_score = sum(p * cat))
+  
+  sr_summary <- sr_data %>%
+    summarize(chisq = sum(chisq),  df = sum(df)) %>%
+    mutate(pvalue = pchisq(chisq, df, lower.tail = FALSE),
+           chisq = sprintf("%0.1f", chisq),
+           pvalue = sprintf("%0.3f", pvalue),
+           pvalue = case_when(pvalue == "0.000" ~ "< 0.001",
+                              TRUE ~ paste0("= ", pvalue)))
+  
+  subtitle <- bquote(.(itemid) * "; " ~ chi[(.(sr_summary$df))]^2 ~ "=" ~
+                       .(sr_summary$chisq) * "," ~ italic(p) ~ 
+                       .(sr_summary$pvalue))
+  
+  plot <- ggplot(icc_data, aes(x = theta, y = exp_score)) +
+    geom_line(size = 2) +
+    geom_errorbar(data = sr_data, inherit.aes = FALSE,
+                  mapping = aes(x = theta, ymin = bar_bottom, ymax = bar_top),
+                  color = "#E69F00", width = 0.2, size = 1) +
+    geom_point(data = sr_data, mapping = aes(y = prop), color = "#56B4E9",
+               size = 3) +
+    scale_x_continuous(breaks = seq(-3, 3, by = 1)) +
+    expand_limits(y = c(0, (NIS - 1))) +
+    labs(x = expression(theta),
+         y = expression(paste("P(X >= x | ", theta, ")")),
+         title = "Standardized Residuals",
+         subtitle = subtitle,
+         color = "Score") +
+    theme_bw() +
+    theme(legend.position = "bottom")
+  
+  return(plot)
 }
 ```
 
@@ -237,11 +337,17 @@ item_params_1pl <- coef(model_1pl, IRTpars = TRUE) %>%
 We are also likely interested in the person parameters, or the respondent ability estimates. We can extract the ability estimates using the `fscores()` function. When then do some formatting to get the scores into a nice data frame, and add a `studentid` column so we can keep track of which ability estimate goes with each respondent.
 
 ```{r person-params}
-person_params <- fscores(model_3pl) %>%
+person_params_1pl <- fscores(model_1pl) %>%
   as_tibble(.name_repair = ~"theta") %>%
   rowid_to_column(var = "studentid")
 
-person_params
+person_params_2pl <- fscores(model_2pl) %>%
+  as_tibble(.name_repair = ~"theta") %>%
+  rowid_to_column(var = "studentid")
+
+person_params_3pl <- fscores(model_3pl) %>%
+  as_tibble(.name_repair = ~"theta") %>%
+  rowid_to_column(var = "studentid")
 ```
 
 ## Item Regressions
@@ -292,6 +398,57 @@ icc_1pl <- item_params_1pl %>%
 icc_3pl[[1]]
 icc_2pl[[1]]
 icc_1pl[[1]]
+```
+
+## Standardized Residuals
+
+```{r}
+iccs <- crossing(theta = seq(-3, 3, by = 0.01),
+                 itemid = colnames(model_data)) %>%
+  left_join(item_params_1pl, by = "itemid") %>%
+  future_pmap_dfr(icc_calc, .progress = TRUE) %>%
+  nest(icc_data = -c(itemid))
+```
+
+
+```{r}
+person_groups <- person_params_1pl %>%
+  mutate(group = cut_interval(theta, n = 10),
+         quad = as.numeric(group))
+
+quad_summary <- clean_ied %>%
+  pivot_longer(cols = -c(studentid, gender),
+               names_to = "item", values_to = "score") %>%
+  filter(!is.na(score)) %>%
+  left_join(select(person_groups, studentid, theta, quad), by = "studentid") %>%
+  group_by(quad, item) %>%
+  summarize(n = n(), total_score = sum(score), total_theta = sum(theta)) %>%
+  ungroup() %>%
+  mutate(prop = case_when(n < 5 ~ NA_real_,
+                          TRUE ~ total_score / n),
+         theta = case_when(n < 5 ~ NA_real_,
+                           TRUE ~ total_theta / n))
+
+srs <- quad_summary %>%
+  select(quad, n, prop, theta, itemid = item) %>%
+  left_join(item_params_1pl, by = "itemid") %>%
+  pmap_dfr(sr_calc) %>%
+  nest(sr_data = -c(itemid)) %>%
+  left_join(iccs, by = "itemid")
+
+sr_plots <- meta %>%
+  select(itemid, itemtype, NIS, maxscore) %>%
+  filter(NIS == 2)  %>%
+  left_join(mutate(srs, itemid = as.double(itemid)), by = "itemid") %>%
+  pmap(sr_plot)
+
+walk(sr_plots, print)
+
+pdf("~/Desktop/1pl-sr.pdf", width = 6, height =6)
+for(i in 1:length(sr_plots)) {
+  print(sr_plots[[i]])
+}
+dev.off()
 ```
 
 
